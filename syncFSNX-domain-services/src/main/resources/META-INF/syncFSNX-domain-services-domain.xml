@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd">
+
+	<bean id="domainService" class="org.esupportail.syncfsnx.domain.DomainServiceImpl">
+		<property name="configurator" ref="configurator" />
+	</bean>
+
+	<bean id="configurator" class="org.esupportail.syncfsnx.domain.beans.Configurator">
+		<property name="localPath"	value="${localPath}" />
+		<property name="remotePath" value="${remotePath}" />
+		<property name="user" value="${user}" />
+		<property name="password" value="${password}" />
+		<property name="nuxeoAutomationURL" value="${nuxeoAutomationURL}" />
+	</bean>
+
+<!-- Ex : -Dapplication.config.location=/tmp/foo.properties -->
+	<bean id="propertyConfigurer"
+		class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+		<property name="locations">
+			<list>
+<!-- 				<value>classpath:/properties/defaults.properties</value> -->
+<!-- 				<value>classpath:/properties/config.properties</value> -->
+				<value>file:${conf}</value>
+			</list>
+		</property>
+		<property name="ignoreResourceNotFound" value="true" />
+	</bean>
+
+</beans>
