@@ -5,7 +5,6 @@
     <artifactId>syncFSNX</artifactId>
     <version>1.0.0-RC3-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <description>An Blank Application to start your project</description>
     <repositories>
         <repository>
             <id>esup-snapshots</id>
@@ -39,8 +38,7 @@
         </snapshotRepository>
     </distributionManagement>
 	<scm>
-		<developerConnection>scm:svn:https://subversion.cru.fr/esup-ecm/syncfsnx/trunk</developerConnection>
-		<url>https://subversion.cru.fr/esup-ecm</url>
+		<developerConnection>scm:git:ssh://git@github.com/EsupPortail/esup-SyncFSNX.git</developerConnection>
 	</scm>
     <build>
         <defaultGoal>install</defaultGoal>
@@ -94,7 +92,8 @@
 				<artifactId>maven-release-plugin</artifactId>
 				<version>2.2.1</version>
 				<configuration>
-					<tagBase>https://subversion.cru.fr/esup-ecm/syncfsnx/tags</tagBase>
+					<tagNameFormat>@{project.version}</tagNameFormat>
+					<autoVersionSubmodules>true</autoVersionSubmodules>	
 					<goals />
 				</configuration>
 			</plugin>
