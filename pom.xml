@@ -127,5 +127,6 @@
    -->
     <module>syncFSNX-domain-beans</module>
     <module>syncFSNX-domain-services</module>
+    <module>syncFSNX-batch</module>
   </modules>
 </project>
