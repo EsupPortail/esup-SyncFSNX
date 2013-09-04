@@ -4,7 +4,7 @@
 	<parent>
 		<artifactId>syncFSNX</artifactId>
 		<groupId>org.esupportail</groupId>
-		<version>1.0.1</version>
+		<version>1.0.2-SNAPSHOT</version>
 	</parent>
 	<artifactId>syncFSNX-domain-services</artifactId>
 	<description>Domain Interface and Impl</description>
@@ -18,7 +18,7 @@
 		<dependency>
 			<groupId>org.esupportail</groupId>
 			<artifactId>syncFSNX-domain-beans</artifactId>
-			<version>1.0.1</version>
+			<version>1.0.2-SNAPSHOT</version>
 			<type>jar</type>
 		</dependency>
 		<dependency>
