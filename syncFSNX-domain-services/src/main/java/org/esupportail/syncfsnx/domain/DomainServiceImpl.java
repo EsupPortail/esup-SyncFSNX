@@ -4,13 +4,10 @@
 package org.esupportail.syncfsnx.domain;
 
 import java.io.File;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 
 import javax.activation.MimetypesFileTypeMap;
@@ -21,12 +18,12 @@ import org.esupportail.commons.utils.Assert;
 import org.esupportail.syncfsnx.domain.beans.Configurator;
 import org.esupportail.syncfsnx.domain.beans.SyncDocument;
 import org.esupportail.syncfsnx.domain.beans.SyncDocumentType;
-import org.nuxeo.ecm.automation.client.jaxrs.Constants;
-import org.nuxeo.ecm.automation.client.jaxrs.Session;
+import org.nuxeo.ecm.automation.client.Constants;
+import org.nuxeo.ecm.automation.client.Session;
 import org.nuxeo.ecm.automation.client.jaxrs.impl.HttpAutomationClient;
-import org.nuxeo.ecm.automation.client.jaxrs.model.Document;
-import org.nuxeo.ecm.automation.client.jaxrs.model.Documents;
-import org.nuxeo.ecm.automation.client.jaxrs.model.FileBlob;
+import org.nuxeo.ecm.automation.client.model.Document;
+import org.nuxeo.ecm.automation.client.model.Documents;
+import org.nuxeo.ecm.automation.client.model.FileBlob;
 import org.springframework.beans.factory.InitializingBean;
 
 /**
