@@ -18,33 +18,20 @@
 		<dependency>
 			<groupId>org.esupportail</groupId>
 			<artifactId>syncFSNX-domain-beans</artifactId>
-			<version>1.0.2-SNAPSHOT</version>
-			<type>jar</type>
-		</dependency>
-		<dependency>
-			<groupId>org.esupportail</groupId>
-			<artifactId>esup-commons2-auth</artifactId>
-			<version>${esupcommons.version}</version>
-			<type>jar</type>
+			<version>${project.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.nuxeo.ecm.automation</groupId>
 			<artifactId>nuxeo-automation-client</artifactId>
-			<version>5.6.0-HF22</version>
 		</dependency>
 		<dependency>
 			<groupId>net.sf.json-lib</groupId>
 			<artifactId>json-lib</artifactId>
-			<version>2.4</version>
-			<type>jar</type>
 			<classifier>jdk15</classifier>
-			<scope>compile</scope>
 		</dependency>
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
-			<version>4.10</version>
-			<scope>test</scope>
 		</dependency>
 	</dependencies>
 </project>

@@ -34,6 +34,11 @@ public class Configurator {
 	 */
 	String password;
 
+    /**
+     * Tuples of user:permission to set as ACL on files.
+     */
+    private String aclFileName;
+
 	/**
 	 * @return the localPath
 	 */
@@ -104,4 +109,11 @@ public class Configurator {
 		this.nuxeoAutomationURL = nuxeoAutomationURL;
 	}
 
+    public String getAclFileName() {
+        return aclFileName;
+    }
+
+    public void setAclFileName(String aclFileName) {
+        this.aclFileName = aclFileName;
+    }
 }

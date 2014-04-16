@@ -3,15 +3,17 @@
  */
 package org.esupportail.syncfsnx.domain;
 
+import java.io.BufferedReader;
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.*;
 
 import javax.activation.MimetypesFileTypeMap;
 
+import org.esupportail.commons.exceptions.ConfigException;
 import org.esupportail.commons.services.logging.Logger;
 import org.esupportail.commons.services.logging.LoggerImpl;
 import org.esupportail.commons.utils.Assert;
@@ -25,6 +27,9 @@ import org.nuxeo.ecm.automation.client.model.Document;
 import org.nuxeo.ecm.automation.client.model.Documents;
 import org.nuxeo.ecm.automation.client.model.FileBlob;
 import org.springframework.beans.factory.InitializingBean;
+
+import static java.io.File.separator;
+import static java.lang.String.format;
 
 /**
  * @author Raymond Bourges
@@ -46,7 +51,7 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
 	 * configurator
 	 */
 	private Configurator configurator;
-	
+
 	/**
 	 * nuxeo session
 	 */
@@ -76,7 +81,7 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
 		List<String> remoteKeys = new ArrayList<String>(remoteDocuments.keySet());
 		Collections.sort(remoteKeys);
 		for (String localKey : localKeys) {
-			SyncDocument local = localDocuments.get(localKey); 
+			SyncDocument local = localDocuments.get(localKey);
 			//is local document is not present remotely ?
 			if (remoteDocuments.get(localKey) == null) {
 				createNxDocument(local);
@@ -84,13 +89,10 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
 			else {
 				SyncDocument remote = remoteDocuments.get(localKey); 
 				//is local document not equal remote document (for example modification date is different)
-				if (!local.isFolder()) {
-					if (local.getModificationDate().after(remote.getModificationDate())) {
-						removeNxDocument(local);
-						createNxDocument(local);
-						
-					}
-				}				
+				if (!local.isFolder() && local.getModificationDate().after(remote.getModificationDate())) {
+                    removeNxDocument(local);
+                    createNxDocument(local);
+				}
 			}			
 		}
 	}
@@ -102,9 +104,32 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
 		Session session = getNxSession();
 		try {
 			//find parent path
-			String remotePath = configurator.getRemotePath() + local.getRelativePath();
-			String remoteParentPath = remotePath.substring(0, remotePath.lastIndexOf("/"));
-			String finalPath = remotePath.substring(remotePath.lastIndexOf("/") + 1);;
+            final String remotePath = configurator.getRemotePath() + local.getRelativePath();
+            final String remoteParentPath = remotePath.substring(0, remotePath.lastIndexOf(separator));
+            final String finalPath = remotePath.substring(remotePath.lastIndexOf(separator) + 1);
+
+            final String localRelativePath = local.getRelativePath();
+            final String aclFilename = configurator.getAclFileName();
+            final String aclFilePath = format("%s%s%s%s", configurator.getLocalPath(),
+                    localRelativePath.substring(0, localRelativePath.lastIndexOf(separator)), separator, aclFilename);
+
+            final Path aclFile = Paths.get(aclFilePath);
+
+            final Map<String, String[]> tuples = new HashMap<String, String[]>();
+            if (Files.exists(aclFile) && Files.isRegularFile(aclFile)) {
+                BufferedReader reader = Files.newBufferedReader(aclFile, StandardCharsets.UTF_8);
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (!line.equals("")) {
+                        final String[] fragments = line.split(";");
+                        if (fragments.length < 3) throw new ConfigException("ACLs MUST consist of triplet");
+                        final String user = fragments[1];
+                        final String permission = fragments[2];
+                        tuples.put(fragments[0], new String[]{user, permission});
+                    }
+                }
+            }
+
 			Document root = (Document) session.newRequest("Document.Fetch").set("value", remoteParentPath).execute();
 			if (local.isFolder()) {
 				Document rep = (Document) session.newRequest("Document.Create")
@@ -113,7 +138,24 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
 					.set("name", finalPath)
 					.set("properties", "dc:title=" + finalPath)
 					.execute();
-			} else {
+
+                final String[] acl = tuples.get(finalPath);
+                if (acl != null) {
+                    session.newRequest("Document.SetACE")
+                            .setInput(rep)
+                            .set("user", "Everyone")
+                            .set("permission", "Everything")
+                            .set("grant", "false")
+                            .execute();
+
+                    session.newRequest("Document.SetACE")
+                            .setInput(rep)
+                            .set("user", acl[0])
+                            .set("permission", acl[1])
+                            .execute();
+                }
+
+			} else if (!finalPath.equalsIgnoreCase(aclFilename)) {
 				Document doc = (Document) session.newRequest("Document.Create")
 					.setInput(root)
 					.set("type", "File")
@@ -294,7 +336,7 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
 				session = client.getSession(configurator.getUser(), configurator.getPassword());
 				nxSession = session;
 			} catch (Exception e) {
-				error("Error creting nuxeo session", e);
+				error("Error creating Nuxeo session", e);
 			}
 		}
 		return nxSession;

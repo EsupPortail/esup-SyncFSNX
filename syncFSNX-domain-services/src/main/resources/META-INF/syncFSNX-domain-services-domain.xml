@@ -13,7 +13,8 @@
 		<property name="remotePath" value="${remotePath}" />
 		<property name="user" value="${user}" />
 		<property name="password" value="${password}" />
-		<property name="nuxeoAutomationURL" value="${nuxeoAutomationURL}" />
+        <property name="nuxeoAutomationURL" value="${nuxeoAutomationURL}" />
+        <property name="aclFileName" value="${acl.filename}" />
 	</bean>
 
 <!-- Ex : -Dapplication.config.location=/tmp/foo.properties -->

@@ -27,8 +27,7 @@ public class Launcher {
 		//load spring config
 		ClassPathXmlApplicationContext appContext = new ClassPathXmlApplicationContext(
 		        new String[] {"META-INF/syncFSNX-domain-services-domain.xml"});
-		BeanFactory factory = (BeanFactory) appContext;
-		DomainService domainService = (DomainService) factory.getBean("domainService");
+		DomainService domainService = (DomainService) appContext.getBean("domainService");
 		//start synchronization
 		domainService.synchronise();
 		LOGGER.info("syncFSNX OK");
