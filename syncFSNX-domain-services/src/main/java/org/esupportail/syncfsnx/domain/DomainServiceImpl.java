@@ -3,19 +3,7 @@
  */
 package org.esupportail.syncfsnx.domain;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.*;
-
-import javax.activation.MimetypesFileTypeMap;
-
 import org.esupportail.commons.exceptions.ConfigException;
-import org.esupportail.commons.services.logging.Logger;
-import org.esupportail.commons.services.logging.LoggerImpl;
 import org.esupportail.commons.utils.Assert;
 import org.esupportail.syncfsnx.domain.beans.Configurator;
 import org.esupportail.syncfsnx.domain.beans.SyncDocument;
@@ -26,9 +14,18 @@ import org.nuxeo.ecm.automation.client.jaxrs.impl.HttpAutomationClient;
 import org.nuxeo.ecm.automation.client.model.Document;
 import org.nuxeo.ecm.automation.client.model.Documents;
 import org.nuxeo.ecm.automation.client.model.FileBlob;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 
-import static java.lang.String.format;
+import javax.activation.MimetypesFileTypeMap;
+import java.io.BufferedReader;
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.*;
 
 /**
  * @author Raymond Bourges
@@ -43,7 +40,7 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
     /**
      * For Logging.
      */
-    private final Logger logger = new LoggerImpl(this.getClass());
+    private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     /**
      * configurator
@@ -101,17 +98,17 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
         Session session = getNxSession();
         try {
             //find parent path
-            final String remotePath = configurator.getRemotePath() + local.getRelativePath();
-            final int lastSlashIndex = remotePath.lastIndexOf("/");
-            final String remoteParentPath = remotePath.substring(0, lastSlashIndex);
-            final String finalPath = remotePath.substring(lastSlashIndex + 1);
-
             final String localRelativePath = local.getRelativePath();
+            final String remotePath = configurator.getRemotePath() + localRelativePath;
+            final String remoteParentPath = remotePath.substring(0, remotePath.lastIndexOf("/"));
+            final String finalPath = remotePath.substring(remotePath.lastIndexOf("/") + 1);
+
             final String aclFilename = configurator.getAclFileName();
 
+            final int endIndex = localRelativePath.lastIndexOf("/");
             final Path aclFile = Paths.get(
                     configurator.getLocalPath(),
-                    localRelativePath.substring(0, localRelativePath.lastIndexOf(File.separator)),
+                    endIndex > 1 ? localRelativePath.substring(0, endIndex) : localRelativePath,
                     aclFilename);
 
             final Map<String, String[]> tuples = new HashMap<String, String[]>();
@@ -270,12 +267,13 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
     }
 
     private HashMap<String, SyncDocument> getLocalDocuments() {
-        HashMap<String, SyncDocument> ret = new HashMap<String, SyncDocument>();
-        File root = new File(configurator.getLocalPath());
+        final HashMap<String, SyncDocument> ret = new HashMap<String, SyncDocument>();
+        final Path rootPath = Paths.get(configurator.getLocalPath());
+        final File root = rootPath.toFile();
         if (!root.isDirectory()) {
             error(configurator.getLocalPath() + " must be a folder !", null);
         }
-        listLocalFolder(root, ret);
+        listLocalFolder(rootPath, ret);
         if (logger.isDebugEnabled()) {
             logger.debug("local documents:");
             for (String key : ret.keySet()) {
@@ -286,20 +284,24 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
         return ret;
     }
 
-    public void listLocalFolder(File file, HashMap<String, SyncDocument> documents) {
+    public void listLocalFolder(Path path, HashMap<String, SyncDocument> documents) {
+        final File file = path.toFile();
         if (!file.isHidden()) {
             final SyncDocument current = new SyncDocument();
             final Date modificationDate = new Date(file.lastModified());
             current.setModificationDate(modificationDate);
-            final String relativePath = file.getAbsolutePath().replace(
-                    Paths.get(configurator.getLocalPath()).toAbsolutePath().toString(), "");
+
+            final String localPath = Paths.get(configurator.getLocalPath()).toFile().getAbsolutePath();
+            final String relativePath = path.toFile().getAbsolutePath()
+                    .replace(localPath, "")
+                    .replaceAll("\\\\", "/");
             current.setRelativePath(relativePath);
             if (file.isDirectory()) {
                 current.setDocumentType(SyncDocumentType.FOLDER);
                 File[] files = file.listFiles();
                 if (files != null) {
-                    for (File children : files) {
-                        listLocalFolder(children, documents);
+                    for (File child : files) {
+                        listLocalFolder(child.toPath(), documents);
                     }
                 }
             } else {
@@ -336,6 +338,7 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
                 error("Error creating Nuxeo session", e);
             }
         }
+
         return nxSession;
     }
 
