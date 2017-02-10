@@ -21,8 +21,8 @@
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>org.nuxeo.ecm.automation</groupId>
-			<artifactId>nuxeo-automation-client</artifactId>
+			<groupId>org.nuxeo.client</groupId>
+			<artifactId>nuxeo-java-client</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>net.sf.json-lib</groupId>

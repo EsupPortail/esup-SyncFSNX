@@ -8,24 +8,24 @@ import org.esupportail.commons.utils.Assert;
 import org.esupportail.syncfsnx.domain.beans.Configurator;
 import org.esupportail.syncfsnx.domain.beans.SyncDocument;
 import org.esupportail.syncfsnx.domain.beans.SyncDocumentType;
-import org.nuxeo.ecm.automation.client.Constants;
-import org.nuxeo.ecm.automation.client.Session;
-import org.nuxeo.ecm.automation.client.jaxrs.impl.HttpAutomationClient;
-import org.nuxeo.ecm.automation.client.model.Document;
-import org.nuxeo.ecm.automation.client.model.Documents;
-import org.nuxeo.ecm.automation.client.model.FileBlob;
+import org.nuxeo.client.api.NuxeoClient;
+import org.nuxeo.client.api.objects.Document;
+import org.nuxeo.client.api.objects.Documents;
+import org.nuxeo.client.api.objects.acl.ACE;
+import org.nuxeo.client.api.objects.upload.BatchUpload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 
 import javax.activation.MimetypesFileTypeMap;
-import java.io.BufferedReader;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * @author Raymond Bourges
@@ -47,19 +47,16 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
      */
     private Configurator configurator;
 
-    /**
-     * nuxeo session
-     */
-    private Session nxSession;
+    private AtomicReference<NuxeoClient> clientRef;
 
     @Override
     public void synchronise() {
         //get local documents
         logger.info("get local documents list");
-        HashMap<String, SyncDocument> localDocuments = getLocalDocuments();
+        Map<String, SyncDocument> localDocuments = getLocalDocuments();
         //get remote documents
         logger.info("get remote documents list");
-        HashMap<String, SyncDocument> remoteDocuments = getRemoteDocuments();
+        Map<String, SyncDocument> remoteDocuments = getRemoteDocuments();
         //remove unnecessary remote documents (not presents locally)
         logger.info("remove unnecessary remote documents");
         removeUnnecessaryRemoteDocuments(localDocuments, remoteDocuments);
@@ -69,11 +66,11 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
     }
 
     private void putLocalDocuments(
-            HashMap<String, SyncDocument> localDocuments,
-            HashMap<String, SyncDocument> remoteDocuments) {
-        List<String> localKeys = new ArrayList<String>(localDocuments.keySet());
+            Map<String, SyncDocument> localDocuments,
+            Map<String, SyncDocument> remoteDocuments) {
+        List<String> localKeys = new ArrayList<>(localDocuments.keySet());
         Collections.sort(localKeys);
-        List<String> remoteKeys = new ArrayList<String>(remoteDocuments.keySet());
+        List<String> remoteKeys = new ArrayList<>(remoteDocuments.keySet());
         Collections.sort(remoteKeys);
         for (String localKey : localKeys) {
             SyncDocument local = localDocuments.get(localKey);
@@ -95,7 +92,7 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
         if (logger.isDebugEnabled()) {
             logger.debug("Creating " + local.getRelativePath() + " on Nuxeo");
         }
-        Session session = getNxSession();
+        final NuxeoClient client = getNxClient();
         try {
             //find parent path
             final String localRelativePath = local.getRelativePath();
@@ -111,11 +108,10 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
                     endIndex > 1 ? localRelativePath.substring(0, endIndex) : localRelativePath,
                     aclFilename);
 
-            final Map<String, String[]> tuples = new HashMap<String, String[]>();
+            final Map<String, String[]> tuples = new HashMap<>();
             if (Files.exists(aclFile) && Files.isRegularFile(aclFile)) {
-                BufferedReader reader = Files.newBufferedReader(aclFile, StandardCharsets.UTF_8);
-                String line;
-                while ((line = reader.readLine()) != null) {
+                final List<String> lines = Files.readAllLines(aclFile, StandardCharsets.UTF_8);
+                for (String line: lines) {
                     if (!line.equals("")) {
                         final String[] fragments = line.split(";");
                         if (fragments.length < 3) throw new ConfigException("ACLs MUST consist of triplet");
@@ -126,58 +122,59 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
                 }
             }
 
-            Document root = (Document) session.newRequest("Document.Fetch").set("value", remoteParentPath).execute();
+            final Document root = client.repository().fetchDocumentByPath(remoteParentPath);
             if (local.isFolder()) {
-                Document rep = (Document) session.newRequest("Document.Create")
-                        .setInput(root)
-                        .set("type", "Folder")
-                        .set("name", finalPath)
-                        .set("properties", "dc:title=" + finalPath)
-                        .execute();
+                Document rep = new Document(finalPath, "Folder");
+                rep.setName(finalPath);
+                rep.set("dc:title", finalPath);
+
+                final Document createdRep = client.repository().createDocumentByPath(root.getPath(), rep);
 
                 final String[] acl = tuples.get(finalPath);
                 if (acl != null) {
-                    session.newRequest("Document.SetACE")
-                            .setInput(rep)
-                            .set("user", "Everyone")
-                            .set("permission", "Everything")
-                            .set("grant", "false")
-                            .execute();
-
-                    session.newRequest("Document.SetACE")
-                            .setInput(rep)
-                            .set("user", acl[0])
-                            .set("permission", acl[1])
-                            .execute();
+                    final ACE ace = new ACE();
+                    ace.setUsername(acl[0]);
+                    ace.setPermission(acl[1]);
+                    ace.setBlockInheritance(true);
+                    addPermission(createdRep, ace);
                 }
 
             } else if (!finalPath.equalsIgnoreCase(aclFilename)) {
-                Document doc = (Document) session.newRequest("Document.Create")
-                        .setInput(root)
-                        .set("type", "File")
-                        .set("name", finalPath)
-                        .set("properties", "dc:title=" + finalPath)
-                        .execute();
-                File file = Paths.get(configurator.getLocalPath(), local.getRelativePath()).toFile();
-                FileBlob fb = new FileBlob(file);
+
+                final Document doc = new Document(finalPath, "File");
+                doc.setName(finalPath);
+                doc.set("dc:title", finalPath);
+
+                final Document createdDoc = client.repository().createDocumentById(root.getId(), doc);
+
+                final File file = Paths.get(configurator.getLocalPath(), local.getRelativePath()).toFile();
                 //find mimeType
-                MimetypesFileTypeMap mimeTypesMap = new MimetypesFileTypeMap();
-                String mimeType = mimeTypesMap.getContentType(file);
-                fb.setMimeType(mimeType);
-                session.newRequest("Blob.Attach")
-                        .setHeader(Constants.HEADER_NX_VOIDOP, "true")
-                        .setInput(fb)
-                        .set("document", doc).execute();
+                final MimetypesFileTypeMap mimeTypesMap = new MimetypesFileTypeMap();
+                final String mimeType = mimeTypesMap.getContentType(file);
+
+                BatchUpload batch = client.fetchUploadManager();
+                batch = batch.upload(file.getName(), file.length(), mimeType, batch.getBatchId(), "1", file);
+
+                createdDoc.set("file:content", batch.getBatchBlob());
+                createdDoc.updateDocument();
             }
         } catch (Exception e) {
             error("Error creating " + local.getRelativePath() + " document", e);
         }
     }
 
+    private void addPermission(Document document, ACE ace) {
+        final Map<String, Object> params = new HashMap<>();
+        params.put("user", ace.getUsername());
+        params.put("permission", ace.getPermission());
+        params.put("blockInheritance", ace.isBlockInheritance());
+        getNxClient().automation("Document.AddPermission").input(document).parameters(params).execute();
+    }
+
     private void removeUnnecessaryRemoteDocuments(
-            HashMap<String, SyncDocument> localDocuments,
-            HashMap<String, SyncDocument> remoteDocuments) {
-        List<String> remoteKeys = new ArrayList<String>(remoteDocuments.keySet());
+            Map<String, SyncDocument> localDocuments,
+            Map<String, SyncDocument> remoteDocuments) {
+        List<String> remoteKeys = new ArrayList<>(remoteDocuments.keySet());
         Collections.sort(remoteKeys);
         String path = "/////////////";
         for (String remoteKey : remoteKeys) {
@@ -202,22 +199,20 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
             logger.debug("removing " + document.getRelativePath() + " from Nuxeo");
         }
         String path = configurator.getRemotePath() + document.getRelativePath();
-        Session session = getNxSession();
-        Document root;
         try {
-            root = (Document) session.newRequest("Document.Fetch").set("value", path).execute();
-            session.newRequest("Document.Delete").setInput(root).execute();
+            final Document root = getNxClient().repository().fetchDocumentByPath(path);
+            getNxClient().repository().deleteDocument(root);
         } catch (Exception e) {
             error("Error removing " + path + " from nuxeo", e);
         }
     }
 
     private HashMap<String, SyncDocument> getRemoteDocuments() {
-        HashMap<String, SyncDocument> ret = new HashMap<String, SyncDocument>();
-        String path = configurator.getRemotePath();
+        final HashMap<String, SyncDocument> ret = new HashMap<>();
+        final String path = configurator.getRemotePath();
         try {
-            listRemoteFolder(path, getNxSession(), ret);
-        } catch (Exception e) {
+            ret.putAll(listRemoteFolder(path));
+        } catch (Throwable e) {
             error("Error reading nuxeo documents", e);
         }
         if (logger.isDebugEnabled()) {
@@ -235,7 +230,7 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
      * @param e   exception
      *            log a error and throw it
      */
-    private void error(String msg, Exception e) {
+    private void error(String msg, Throwable e) {
         logger.error(msg);
         if (e != null) {
             throw new RuntimeException(msg, e);
@@ -244,36 +239,36 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
         }
     }
 
-    private void listRemoteFolder(final String path,
-                                  final Session session,
-                                  final HashMap<String, SyncDocument> documents) throws Exception {
-        Document root = (Document) session.newRequest("Document.Fetch").set("value", path).execute();
-        Documents docs = (Documents) session.newRequest("Document.GetChildren").setInput(root).execute();
-        for (Document document : docs) {
-            SyncDocument current = new SyncDocument();
-            Date modificationDate = document.getLastModified();
+    private Map<String, SyncDocument> listRemoteFolder(final String path) {
+        final Map<String, SyncDocument> result = new HashMap<>();
+
+        final Document root = getNxClient().repository().fetchDocumentByPath(path);
+        final Documents docs = getNxClient().repository().fetchChildrenById(root.getId());
+        for (Document document : docs.getDocuments()) {
+            final SyncDocument current = new SyncDocument();
+            final Date modificationDate = Date.from(Instant.parse(document.getLastModified()));
             current.setModificationDate(modificationDate);
-            String relativePath = document.getPath();
-            relativePath = relativePath.replaceFirst(configurator.getRemotePath(), "");
+            final String relativePath = document.getPath().replaceFirst(configurator.getRemotePath(), "");
             current.setRelativePath(relativePath);
             if (document.getType().equals("Folder")) {
                 current.setDocumentType(SyncDocumentType.FOLDER);
-                listRemoteFolder(document.getPath(), session, documents);
+                result.putAll(listRemoteFolder(document.getPath()));
             } else {
                 current.setDocumentType(SyncDocumentType.FILE);
             }
-            documents.put(relativePath, current);
+            result.put(relativePath, current);
         }
+        return result;
     }
 
-    private HashMap<String, SyncDocument> getLocalDocuments() {
-        final HashMap<String, SyncDocument> ret = new HashMap<String, SyncDocument>();
+    private Map<String, SyncDocument> getLocalDocuments() {
+        final Map<String, SyncDocument> ret = new HashMap<>();
         final Path rootPath = Paths.get(configurator.getLocalPath());
         final File root = rootPath.toFile();
         if (!root.isDirectory()) {
             error(configurator.getLocalPath() + " must be a folder !", null);
         }
-        listLocalFolder(rootPath, ret);
+        ret.putAll(listLocalFolder(rootPath));
         if (logger.isDebugEnabled()) {
             logger.debug("local documents:");
             for (String key : ret.keySet()) {
@@ -284,7 +279,8 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
         return ret;
     }
 
-    public void listLocalFolder(Path path, HashMap<String, SyncDocument> documents) {
+    private Map<String, SyncDocument> listLocalFolder(Path path) {
+        final Map<String, SyncDocument> result = new HashMap<>();
         final File file = path.toFile();
         if (!file.isHidden()) {
             final SyncDocument current = new SyncDocument();
@@ -301,20 +297,25 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
                 File[] files = file.listFiles();
                 if (files != null) {
                     for (File child : files) {
-                        listLocalFolder(child.toPath(), documents);
+                        result.putAll(listLocalFolder(child.toPath()));
                     }
                 }
             } else {
                 current.setDocumentType(SyncDocumentType.FILE);
             }
             if (!relativePath.equals("")) {
-                documents.put(relativePath, current);
+                result.put(relativePath, current);
             }
         }
+        return result;
     }
 
     public void afterPropertiesSet() throws Exception {
-        Assert.notNull(configurator, "propertie configurator of class " + this.getClass() + " can't be null!");
+        Assert.notNull(configurator, "properties configurator of class " + this.getClass() + " can't be null!");
+        Assert.hasText(configurator.getUser(), "Nuxeo user can't be empty!");
+        Assert.hasText(configurator.getPassword(), "Nuxeo password can't be empty!");
+        Assert.hasText(configurator.getNuxeoAutomationURL(), "Nuxeo URL can't be empty!");
+        Assert.hasText(configurator.getLocalPath(), "Local path can't be empty!");
     }
 
     /**
@@ -324,22 +325,12 @@ public class DomainServiceImpl implements DomainService, InitializingBean {
         this.configurator = configurator;
     }
 
-    /**
-     * @return the session
-     */
-    public Session getNxSession() {
-        if (nxSession == null) {
-            HttpAutomationClient client = new HttpAutomationClient(configurator.getNuxeoAutomationURL());
-            Session session;
-            try {
-                session = client.getSession(configurator.getUser(), configurator.getPassword());
-                nxSession = session;
-            } catch (Exception e) {
-                error("Error creating Nuxeo session", e);
-            }
+
+    private NuxeoClient getNxClient() {
+        if (clientRef == null || clientRef.get() == null) {
+            this.clientRef = new AtomicReference<>(new NuxeoClient(
+                    configurator.getNuxeoAutomationURL(), configurator.getUser(), configurator.getPassword()));
         }
-
-        return nxSession;
+        return clientRef.get();
     }
-
 }

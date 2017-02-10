@@ -3,10 +3,9 @@
  */
 package org.esupportail.syncfsnx;
 
-import org.esupportail.commons.services.logging.Logger;
-import org.esupportail.commons.services.logging.LoggerImpl;
 import org.esupportail.syncfsnx.domain.DomainService;
-import org.springframework.beans.factory.BeanFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 /**
@@ -18,7 +17,7 @@ public class Launcher {
 	/**
 	 * For Logging.
 	 */
-	private static final Logger LOGGER = new LoggerImpl(Launcher.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(Launcher.class);
 	/**
 	 * @param args
 	 */
